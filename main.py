@@ -1,91 +1,89 @@
-import tkinter as tk
-
-from get_info import get_band_lists, get_post_key
-from get_new_post_key import checking_new_post, get_new_post_key
-
-
-class SimpleApp:
-    def __init__(self, master):
-        self.token = None
-        self.band_key = None
-        self.post_key = None
-        self.message = None
-
-        self.master = master
-        master.title("승마 클럽 메크로")
-
-        # 1. Access Token 입력란 ----------------------------------------------
-        self.label_1 = tk.Label(master, text="\n네이버 밴드에서 받은 Access Token을 넣어주세요.")
-        self.label_1.grid(row=0, column=0, sticky="w")
-
-        self.entry_1 = tk.Entry(master, width=30) 
-        self.entry_1.grid(row=1, column=0, sticky="w")
-
-        self.button_1 = tk.Button(master, text="Confirm", command=self.confirm_1)
-        self.button_1.grid(row=1, column=1, sticky="e")  # 오른쪽 끝에 붙이기
-
-        # 1.1 Access Token 이 잘 작동한다면 가입된 밴드의 이름과 Band_key가 출력되는 부분 -------
-        self.output_text_1 = tk.Text(master, height=4, width=50)
-        self.output_text_1.grid(row=2, column=0, columnspan=2, sticky="w") 
-
-        # 2. band_key 입력란 ----------------------------------------------
-        self.label_2 = tk.Label(master, text="\n내가 원하는 밴드의 이름 뒤에 있는 영어를 복사해주세요.")
-        self.label_2.grid(row=6, column=0, sticky="w")
-
-        self.entry_2 = tk.Entry(master, width=30) 
-        self.entry_2.grid(row=7, column=0, sticky="w")
-
-        self.button_2 = tk.Button(master, text="Confirm", command=self.confirm_2)
-        self.button_2.grid(row=7, column=1, sticky="e")  
-
-        # 3. 원하는 텍스트 입력 -----------------------------------------------
-        self.label_3 = tk.Label(master, text="\n원하는 댓글을 적어주세요.")
-        self.label_3.grid(row=8, column=0, sticky="w")
-
-        self.entry_3 = tk.Text(master, height=3, width=40) 
-        self.entry_3.grid(row=9, column=0, sticky="w")
-
-        self.button_3 = tk.Button(master, text="Confirm", command=self.confirm_3)
-        self.button_3.grid(row=9, column=1, sticky="e")  # 오른쪽 끝에 붙이기
-
-        # 4. 메크로 시작 ----------------------------------------------------
-        self.start_button = tk.Button(master, text="메크로 시작", command=self.start)
-        self.start_button.grid(row=12, column=0, columnspan=2, pady=10)  
+import streamlit as st
+import requests
+import time
 
 
-    def confirm_1(self):
-        self.token = self.entry_1.get()
-        band_values = get_band_lists(self.token)
-        
-        output_text_1 = ""
-        for band in band_values:
-            for name, key in band.items():
-                output_text_1 += f"{name:<9} {key}\n" 
-        self.output_text_1.delete(1.0, tk.END)
-        self.output_text_1.insert(tk.END, output_text_1) 
-        print("------ 1. access token is checked ------")
-        print(f"access token: {self.token}\n")
-
-    def confirm_2(self):
-        self.band_key = self.entry_2.get()
-        print("------ 2. band_key is checked ------")
-        print(f"band_key: {self.band_key}\n")
-
-    def confirm_3(self):
-        self.message = self.entry_3.get("1.0", tk.END)
-        print("------ 3. my message is checked ------")
-        print(f'{self.entry_3.get("1.0", tk.END)}\n')
-
-    def start(self):
-        print("Start button clicked.")
-        checking_new_post(self.token, self.band_key, self.message)
-
-        # 여기에 시작 버튼을 클릭했을 때 실행할 동작을 추가하세요.
+# 사용자가 발급한 TOKEN으로 사용자가 속해있는 밴드 키를 가져옵니다.
+def get_band_list(token):
+    try:
+        url = f'https://openapi.band.us/v2.1/bands?access_token={token}'
+        response = requests.get(url)
+        response.raise_for_status()  # HTTP 오류가 발생하면 예외를 발생시킵니다.
+        json_dict = response.json()  # JSON 응답을 자동으로 파싱합니다.
+        clean_bands = [{band['name']: band['band_key']} for band in json_dict['result_data']['bands']]
+        return clean_bands
+    except requests.RequestException as e:
+        print(f"Request failed: {e}")
+    except KeyError as e:
+        print(f"Unexpected response format: {e}")
 
 
-        
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = SimpleApp(root)
-    root.geometry("400x400")
-    root.mainloop()
+def get_new_post_key(token, band_key):
+    url = 'https://openapi.band.us/v2/band/posts'
+    params = {
+        'access_token': token,
+        'band_key': band_key,
+        'locale': 'ko_KR'
+    }
+    try:
+        response = requests.get(url, params=params)
+        response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+        json_dict = response.json()
+        post_key = json_dict.get('result_data', {}).get('items', [{}])[0].get('post_key')
+        print(f'post_key: {post_key}')
+        return post_key
+    except (requests.RequestException, IndexError, KeyError) as e:
+        print(f"게시물 키를 가져오는 중 오류가 발생했습니다: {e}")
+        return None
+
+def checking_new_post(token, band_key, body):
+    last_post_key = get_new_post_key(token, band_key)
+
+    while True:
+        current_post_key = get_new_post_key(token, band_key)
+        if last_post_key != current_post_key:
+            create_comment(TOKEN, BAND_KEY, current_post_key, MESSAGE)
+            st.write("키가 변경되엇습니다.")
+            break
+        time.sleep(2)  # 60초 대기 후 다시 확인
+
+# 메시지 작성
+def create_comment(token, band_key, post_key, body):
+    url = 'https://openapi.band.us/v2/band/post/comment/create'
+    params = {
+        'access_token': token,
+        'band_key': band_key,
+        'post_key': post_key,
+        'body': body
+    }
+
+    try:
+        response = requests.post(url, data=params)
+        response.raise_for_status()  # HTTP 오류 발생 시 예외 발생
+        print("댓글이 성공적으로 작성되었습니다.")
+    except requests.RequestException as e:
+        print(f"댓글 작성 중 오류가 발생했습니다: {e}")
+
+
+
+# 메인 코드
+TOKEN = st.text_input("Band의 TOKEN을 넣어주세요.")
+
+if TOKEN:
+    band_list = get_band_list(TOKEN)
+    st.write(band_list)
+
+    # 공백
+    st.write("")
+    st.write("")
+
+    BAND_KEY = st.text_input("메크로 대상인 밴드의 TOKEN를 넣어주세요.")
+
+    # 공백
+    st.write("")
+    st.write("")
+
+    MESSAGE = st.text_input("댓글을 적어주세요.")
+
+    if st.button("메크로 시작"):
+        checking_new_post(TOKEN, BAND_KEY, MESSAGE)
